@@ -150,7 +150,7 @@
 #jg-sidebar-pomo .jgsp-ring-bg { fill: none; stroke: var(--jgsp-green-soft); stroke-width: 7; }
 #jg-sidebar-pomo .jgsp-ring-fg {
     fill: none; stroke: var(--jgsp-green); stroke-width: 7; stroke-linecap: round;
-    transition: stroke-dashoffset .9s linear;
+    transition: stroke-dashoffset .9s linear, stroke .45s ease;
 }
 #jg-sidebar-pomo[data-mode="short"] .jgsp-ring-fg,
 #jg-sidebar-pomo[data-mode="long"] .jgsp-ring-fg { stroke: #7fa3b8; }
@@ -184,6 +184,8 @@
     transition: filter .2s, transform .2s;
 }
 #jg-sidebar-pomo .jgsp-primary:hover { filter: brightness(1.06); transform: translateY(-1px); }
+/* 按压反馈：幅度很小，控件本体不位移 */
+#jg-sidebar-pomo .jgsp-primary:active { transform: translateY(0) scale(.97); }
 #jg-sidebar-pomo .jgsp-ghost {
     width: 34px;
     padding: 6px 0;
@@ -193,9 +195,10 @@
     color: var(--jgsp-muted);
     font-size: 13px;
     cursor: pointer;
-    transition: border-color .2s, color .2s;
+    transition: border-color .2s, color .2s, transform .15s;
 }
 #jg-sidebar-pomo .jgsp-ghost:hover { border-color: var(--jgsp-green); color: var(--jgsp-green); }
+#jg-sidebar-pomo .jgsp-ghost:active { transform: scale(.92); }
 #jg-sidebar-pomo .jgsp-foot {
     margin-top: 9px;
     text-align: center;
@@ -228,6 +231,15 @@
     font-size: 12px; cursor: pointer;
 }
 #jg-sidebar-pomo .jgsp-save:hover { filter: brightness(.96); }
+/* v2.2.0：通知未授权时出现的次级按钮 */
+#jg-sidebar-pomo .jgsp-notify-btn {
+width: 100%; margin-top: -2px; margin-bottom: 6px; padding: 4px 0;
+border: 1px dashed var(--jgsp-line); border-radius: 4px;
+background: transparent; color: var(--jgsp-muted);
+font-size: 11px; cursor: pointer;
+}
+#jg-sidebar-pomo .jgsp-notify-btn:hover { color: var(--jgsp-green); border-color: var(--jgsp-green); }
+#jg-sidebar-pomo .jgsp-notify-btn[hidden] { display: none; }
 
 /* v2.0.0：累计指标行（总时间 / 总番茄 / 休息次数） */
 #jg-sidebar-pomo .jgsp-metrics {

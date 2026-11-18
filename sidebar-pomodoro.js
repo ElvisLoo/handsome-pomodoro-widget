@@ -1,5 +1,5 @@
 /*
- * 极客港 · Handsome 侧栏番茄钟控件 v2.1.3
+ * 极客港 · Handsome 侧栏番茄钟控件 v2.3.0
  * 位置：#sidebar 内、天气卡片 #jg-weather 的正下方
  * 特性：零依赖 / 零网络请求 / localStorage 持久化 / 绝对时间戳计时（切后台不漂移）
  *       PJAX 换页自动重挂 / 与天气控件同款白底绿系 widget 外观
@@ -11,6 +11,9 @@
  *         提示音复用 AudioContext；补齐减少动态效果下的粒子开关
  * v2.1.3 内部重构：状态与日期逻辑抽成纯函数核心（下方 Core），UI 层只负责 DOM/音效，
  *         核心可在 Node 中直接 require 测试（tests/core.test.js），行为不变。
+ * v2.2.0：新增桌面通知。一轮结束时按设置推送系统通知（专注完成 / 休息完成），
+ *         未授权时在设置面板给出「允许浏览器通知」入口；浏览器不支持则整行隐藏。
+ * v2.3.0：动效打磨——进度环颜色随模式平滑过渡；主/次按钮加按压缩放反馈。
  */
 (function () {
     'use strict';
@@ -18,12 +21,12 @@
     var ID = 'jg-sidebar-pomo';
     var KEY = 'jgSidebarPomo.v2';
     var OLD_KEY = 'jgPomodoro.v1';   // 旧悬浮按钮版的存储键
-    var VERSION = '2.1.3';
+    var VERSION = '2.3.0';
 
     /* =====================================================================
      * 1. 纯函数核心：不碰 DOM / localStorage，浏览器与 Node 通用
      * ===================================================================== */
-    var DEF = { focus: 25, short: 5, long: 15, cycle: 4, sound: true, title: false, autobreak: false };
+    var DEF = { focus: 25, short: 5, long: 15, cycle: 4, sound: true, title: false, autobreak: false, notify: true };
     var MODE = { focus: '专注', short: '短休', long: '长休' };
     var WEEK_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
     var HISTORY_DAYS = 30;
@@ -67,7 +70,8 @@
             cycle: clamp(st.cycle, DEF.cycle, 2, 12),
             sound: st.sound !== false,
             title: !!st.title,
-            autobreak: !!st.autobreak
+            autobreak: !!st.autobreak,
+            notify: st.notify !== false
         };
     }
     /** 迁移旧悬浮版 jgPomodoro.v1：{state, settings, history:{day:{minutes,pomodoros,breaks}}} */
@@ -83,7 +87,7 @@
             history: h,
             settings: {
                 focus: st.focus, short: st.short, long: st.long, cycle: st.cycle,
-                sound: st.sound, title: st.title, autobreak: st.autobreak
+                sound: st.sound, title: st.title, autobreak: st.autobreak, notify: st.notify
             }
         };
     }
@@ -110,7 +114,7 @@
                 migrated = true;
             }
             if (mg.settings) {
-                ['focus', 'short', 'long', 'cycle', 'sound', 'title', 'autobreak'].forEach(function (k) {
+                ['focus', 'short', 'long', 'cycle', 'sound', 'title', 'autobreak', 'notify'].forEach(function (k) {
                     if (mg.settings[k] != null) st[k] = mg.settings[k];
                 });
                 migrated = true;
@@ -232,6 +236,42 @@
         } catch (e) {}
     }
 
+    /* ---------- 桌面通知 ----------
+     * 只在「设置里开了 notify」且「浏览器已授权」时才发；不支持 Notification 的浏览器整行隐藏。
+     * 权限是异步拿的，所以保存设置时若还没授权，先弹系统授权框，拿到结果再落库。
+     */
+    function notifySupported() {
+        try { return typeof window.Notification !== 'undefined'; } catch (e) { return false; }
+    }
+    function notifyPerm() {
+        if (!notifySupported()) return 'unsupported';
+        try { return window.Notification.permission; } catch (e) { return 'denied'; }
+    }
+    function askNotify(cb) {
+        if (!notifySupported()) { if (cb) cb('denied'); return; }
+        try {
+            var p = window.Notification.requestPermission(function (r) { if (cb) cb(r); });
+            // 老 Safari 只返回 Promise，新浏览器两种都给；两者都接，回调只关心最终值
+            if (p && typeof p.then === 'function') p.then(function (r) { if (cb) cb(r); });
+        } catch (e) { if (cb) cb('denied'); }
+    }
+    function pushNotify(title, body) {
+        if (!S.settings.notify || !notifySupported()) return;
+        try {
+            if (window.Notification.permission !== 'granted') return;
+            var n = new window.Notification(title, { body: body, tag: 'jg-pomo-' + Date.now() });
+            n.onclick = function () { try { window.focus(); } catch (e) {} };
+        } catch (e) {}
+    }
+    /** finished 是刚结束的那一轮（focus/short/long）；S.mode 已经是下一阶段 */
+    function notifyFinish(finished) {
+        var st = S.settings;
+        var body = (finished === 'focus')
+            ? (S.mode === 'long' ? '专注结束，长休 ' + st.long + ' 分钟' : '专注结束，休息 ' + st.short + ' 分钟')
+            : '休息结束，开始 ' + st.focus + ' 分钟专注';
+        pushNotify(Core.MODE[finished] + '完成', body);
+    }
+
     /* ---------- 状态机 ---------- */
     function settle() {
         // 页面在后台/关闭期间计时可能已经走完，回来时补结算（最多补一轮）
@@ -242,8 +282,10 @@
     }
     function complete() {
         var r = Core.applyComplete(S, Date.now());
+        var finished = r.record.mode;
         S = r.state;
         beep();
+        notifyFinish(finished);
         save();
         if (box) {
             box.classList.add('jgsp-finished');
@@ -326,6 +368,8 @@
                 '<label class="jgsp-check"><input type="checkbox" id="jgsp-s-sound"> 完成提示音</label>' +
                 '<label class="jgsp-check"><input type="checkbox" id="jgsp-s-title"> 标题栏倒计时</label>' +
                 '<label class="jgsp-check"><input type="checkbox" id="jgsp-s-autobreak"> 自动开始休息</label>' +
+                '<label class="jgsp-check" id="jgsp-notify-row"><input type="checkbox" id="jgsp-s-notify"> 桌面通知</label>' +
+                '<button type="button" class="jgsp-notify-btn" id="jgsp-notify-btn" hidden>允许浏览器通知</button>' +
                 '<button type="button" class="jgsp-save" id="jgsp-save">保存</button>' +
             '</div>';
         return sec;
@@ -405,9 +449,28 @@
             S.settings.sound = q('jgsp-s-sound').checked;
             S.settings.title = q('jgsp-s-title').checked;
             S.settings.autobreak = q('jgsp-s-autobreak').checked;
-            if (!S.running) { S.endAt = null; S.remaining = Core.duration(S); }
-            save(); render();
+            var wantNotify = q('jgsp-s-notify').checked;
+            var done = function (ok) {
+                S.settings.notify = ok;
+                if (!S.running) { S.endAt = null; S.remaining = Core.duration(S); }
+                save(); render(); syncNotifyUI();
+            };
+            if (!wantNotify) done(false);
+            else if (notifyPerm() === 'granted') done(true);
+            else if (notifyPerm() === 'default') askNotify(function (r) { done(r === 'granted'); });
+            else done(false);   // 被拒或浏览器不支持：存 true 只会让人以为通知在响
         };
+        q('jgsp-notify-btn').onclick = function () { askNotify(function () { syncNotifyUI(); }); };
+        if (!notifySupported()) {
+            var row = q('jgsp-notify-row');
+            if (row) row.style.display = 'none';
+        }
+    }
+    /** 设置面板里「允许浏览器通知」按钮的显隐 */
+    function syncNotifyUI() {
+        var btn = q('jgsp-notify-btn');
+        if (!btn) return;
+        btn.hidden = !(S.settings.notify && notifyPerm() !== 'granted');
     }
     function syncPanels() {
         var w = q('jgsp-weekbox'), p = q('jgsp-settings');
@@ -420,7 +483,9 @@
             q('jgsp-s-sound').checked = !!S.settings.sound;
             q('jgsp-s-title').checked = !!S.settings.title;
             q('jgsp-s-autobreak').checked = !!S.settings.autobreak;
+            q('jgsp-s-notify').checked = !!S.settings.notify;
         }
+        syncNotifyUI();
     }
     function renderWeek() {
         if (!box || !ui.week) return;

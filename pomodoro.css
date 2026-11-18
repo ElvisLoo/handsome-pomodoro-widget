@@ -183,6 +183,9 @@ html.theme-dark #jgpm-root.jgpm:not(.jgpm-light-force) {
 }
 #jgpm-root .jgpm-settings .jgpm-check { grid-column: 1 / -1; gap: 6px; }
 #jgpm-root .jgpm-settings .jgpm-primary { grid-column: 1 / -1; padding: 6px; border-radius: 5px; font-size: 12px; }
+/* v2.2.0：通知未授权时出现的次级链接按钮 */
+#jgpm-root .jgpm-settings .jgpm-notify-btn { grid-column: 1 / -1; padding: 3px 0; background: transparent; text-align: center; }
+#jgpm-root .jgpm-settings .jgpm-notify-btn[hidden] { display: none; }
 
 @media (max-width: 767px) {
     #jgpm-root.jgpm { right: 12px; bottom: 12px; }

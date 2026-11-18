@@ -23,7 +23,8 @@
         sound: true,        // 完成时提示音
         autoBreak: false,   // 完成后自动开始休息
         autoFocus: false,   // 休息结束后自动开始专注
-        title: true         // 标题栏倒计时
+        title: true,        // 标题栏倒计时
+        notify: true         // 完成时桌面通知
     };
 
     function clampInt(v, def, min, max) {
@@ -42,7 +43,8 @@
             sound: raw.sound !== false,
             autoBreak: raw.autoBreak === true,
             autoFocus: raw.autoFocus === true,
-            title: raw.title !== false
+            title: raw.title !== false,
+            notify: raw.notify !== false
         };
     }
 
@@ -214,6 +216,13 @@
 
     function $(id) { return document.getElementById(id); }
 
+    /** 「允许浏览器通知」按钮的显隐 */
+    function syncNotifyUI() {
+        var btn = $('jgpm-notify-btn');
+        if (!btn) return;
+        btn.hidden = !(S.settings.notify && notifyPerm() !== 'granted');
+    }
+
     /* ---------- DOM ---------- */
     var root = document.createElement('div');
     root.id = 'jgpm-root';
@@ -278,6 +287,8 @@
         '    <label class="jgpm-check"><input type="checkbox" id="jgpm-s-title"> 标题栏倒计时</label>',
         '    <label class="jgpm-check"><input type="checkbox" id="jgpm-s-autobreak"> 自动开始休息</label>',
         '    <label class="jgpm-check"><input type="checkbox" id="jgpm-s-autofocus"> 休息后自动开始专注</label>',
+        '    <label class="jgpm-check" id="jgpm-notify-row"><input type="checkbox" id="jgpm-s-notify"> 桌面通知</label>',
+        '    <button type="button" id="jgpm-notify-btn" class="jgpm-link" hidden>允许浏览器通知</button>',
         '    <button type="button" id="jgpm-s-save" class="jgpm-primary">保存</button>',
         '  </div>',
         '</section>'
@@ -308,6 +319,38 @@
                 o.start(t); o.stop(t + 0.22);
             }
         } catch (e) {}
+    }
+
+    /* ---------- 桌面通知（与侧栏版 v2.2.0 同逻辑） ---------- */
+    function notifySupported() {
+        try { return typeof window.Notification !== 'undefined'; } catch (e) { return false; }
+    }
+    function notifyPerm() {
+        if (!notifySupported()) return 'unsupported';
+        try { return window.Notification.permission; } catch (e) { return 'denied'; }
+    }
+    function askNotify(cb) {
+        if (!notifySupported()) { if (cb) cb('denied'); return; }
+        try {
+            var p = window.Notification.requestPermission(function (r) { if (cb) cb(r); });
+            if (p && typeof p.then === 'function') p.then(function (r) { if (cb) cb(r); });
+        } catch (e) { if (cb) cb('denied'); }
+    }
+    function pushNotify(title, body) {
+        if (!S.settings.notify || !notifySupported()) return;
+        try {
+            if (window.Notification.permission !== 'granted') return;
+            var n = new window.Notification(title, { body: body, tag: 'jgpm-' + Date.now() });
+            n.onclick = function () { try { window.focus(); } catch (e) {} };
+        } catch (e) {}
+    }
+    function notifyFinish(finished) {
+        var st = S.settings;
+        var label = (finished === 'short' ? '短休息' : (finished === 'long' ? '长休息' : '专注'));
+        var body = (finished === 'focus')
+            ? (S.state.mode === 'long' ? '专注结束，长休 ' + st.long + ' 分钟' : '专注结束，休息 ' + st.short + ' 分钟')
+            : '休息结束，开始 ' + st.focus + ' 分钟专注';
+        pushNotify(label + '完成', body);
     }
 
     /* ---------- 头像状态联动（Handsome 小头像模式） ---------- */
@@ -421,8 +464,10 @@
     }
     function finish() {
         var r = Core.complete(S.state, S.settings, S.history, Date.now());
+        var finished = r.record.mode;
         S.state = r.state; S.history = r.history;
-        beep(r.record.mode === 'focus' ? 2 : 1);
+        beep(finished === 'focus' ? 2 : 1);
+        notifyFinish(finished);
         save(); render();
     }
 
@@ -466,19 +511,33 @@
             $('jgpm-s-title').checked = S.settings.title;
             $('jgpm-s-autobreak').checked = S.settings.autoBreak;
             $('jgpm-s-autofocus').checked = S.settings.autoFocus;
+            $('jgpm-s-notify').checked = S.settings.notify;
+            syncNotifyUI();
+            if (!notifySupported()) $('jgpm-notify-row').style.display = 'none';
         }
     });
+    $('jgpm-notify-btn').addEventListener('click', function () {
+        askNotify(function () { syncNotifyUI(); });
+    });
     $('jgpm-s-save').addEventListener('click', function () {
-        S.settings = Core.normalizeSettings({
-            focus: $('jgpm-s-focus').value, short: $('jgpm-s-short').value,
-            long: $('jgpm-s-long').value, cycle: $('jgpm-s-cycle').value,
-            sound: $('jgpm-s-sound').checked, title: $('jgpm-s-title').checked,
-            autoBreak: $('jgpm-s-autobreak').checked, autoFocus: $('jgpm-s-autofocus').checked
-        });
-        if (!S.state.running) S.state = Core.blankState(S.settings);
-        if (!S.settings.title) document.title = baseTitle;
-        $('jgpm-settings-box').hidden = true;
-        save(); render();
+        var wantNotify = $('jgpm-s-notify').checked;
+        var done = function (ok) {
+            S.settings = Core.normalizeSettings({
+                focus: $('jgpm-s-focus').value, short: $('jgpm-s-short').value,
+                long: $('jgpm-s-long').value, cycle: $('jgpm-s-cycle').value,
+                sound: $('jgpm-s-sound').checked, title: $('jgpm-s-title').checked,
+                autoBreak: $('jgpm-s-autobreak').checked, autoFocus: $('jgpm-s-autofocus').checked,
+                notify: ok
+            });
+            if (!S.state.running) S.state = Core.blankState(S.settings);
+            if (!S.settings.title) document.title = baseTitle;
+            $('jgpm-settings-box').hidden = true;
+            save(); render(); syncNotifyUI();
+        };
+        if (!wantNotify) done(false);
+        else if (notifyPerm() === 'granted') done(true);
+        else if (notifyPerm() === 'default') askNotify(function (r) { done(r === 'granted'); });
+        else done(false);
     });
     document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape' && S.ui.open) { S.ui.open = false; saveSoon(); render(); }
