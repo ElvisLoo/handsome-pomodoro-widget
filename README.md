@@ -1,3 +1,5 @@
+> **已并入总仓** [ElvisLoo/typecho-handsome-widgets](https://github.com/ElvisLoo/typecho-handsome-widgets)，本仓保留、仍可单独 clone。
+
 # Typecho Handsome 番茄钟控件
 
 给 Typecho 的 Handsome 主题加一个番茄钟：**零依赖、零网络请求、纯前端**。计时用绝对时间戳，切后台 / 合盖 / 睡一觉回来都不漂移；数据只存在这台设备的 `localStorage`。样式和脚本通过主题自带的 `customCss` / `customJs` 注入，**不改主题任何模板**，主题升级不会丢，删掉标记块即卸载。
