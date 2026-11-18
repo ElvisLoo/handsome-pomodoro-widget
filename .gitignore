@@ -1,0 +1,13 @@
+# 备份与临时文件
+*.bak
+*.bak.*
+*.tmp
+*.log
+
+# 依赖
+node_modules/
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini
